@@ -1,4 +1,3 @@
-import queue
 import socket
 import sys
 
@@ -51,9 +50,18 @@ def receive_line(sock):
     return line
 
 
+def get_username(prefix):
+    if prefix.find("!") != -1 or prefix.find("@") != -1:
+        start = prefix.index("!") + 2
+        end = prefix.index("@")
+        return prefix[start:end]
+    else:
+        return False
+
+
 if __name__ == '__main__':
     commands = ['!alert', 'Found']
-    users = queue.Queue()
+    users = set()
 
     (HOST, PORT, CHANNEL, USERNAME, MODE) = read_parameters_from_arg(sys.argv)
     my_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -73,3 +81,12 @@ if __name__ == '__main__':
                 my_socket.sendall(make_mess("PONG %s" % parameter))
         elif length == 3:
             prefix, command, parameters = split_line
+            if command == "PRIVMSG":
+                parameters_list = parameters.split(" ")
+                if len(parameters_list) == 2 and parameters_list[1][1:] == "!alert":
+                    username = get_username(prefix)
+                    if username:
+                        if parameters_list[2] == "enabled":
+                            users.add(username)
+                        elif parameters_list[2] == "disabled":
+                            users.pop(username)
