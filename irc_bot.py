@@ -1,10 +1,10 @@
+import queue
 import socket
 import sys
-import telnetlib
 
 
 def get_parameter(arg_list, value):
-    if arg_list.count(value) > 0:
+    if value in arg_list:
         index_host = arg_list.index(value)
         return arg_list[index_host + 1]
     else:
@@ -13,24 +13,25 @@ def get_parameter(arg_list, value):
 
 def read_parameters_from_arg(arg_list):
     host = get_parameter(arg_list, "-h")
-    port = int(get_parameter(arg_list, "-p"))
+    port = get_parameter(arg_list, "-p")
+    channel = get_parameter(arg_list, "-c")
     user = get_parameter(arg_list, "-u")
-    mode = int(get_parameter(arg_list, "-m"))
+    mode = get_parameter(arg_list, "-m")
     if host is None:
-        pass  # throw error
+        raise ValueError("Host undefined!")
     if port is None:
         port = 6667  # default port
+    else:
+        port = int(port)
+    if channel is None:
+        raise ValueError("Channel undefined!")
     if user is None:
         user = "bot"  # default bot name
     if mode is None:
         mode = 0
-    return host, port, user, mode
-
-
-def debug(socket_to_debug):
-    t = telnetlib.Telnet()
-    t.sock = socket_to_debug
-    t.interact()
+    else:
+        mode = int(mode)
+    return host, port, channel, user, mode
 
 
 def make_mess(message):
@@ -38,9 +39,37 @@ def make_mess(message):
     return bytes(message + "\r\n", "utf-8")
 
 
-(HOST, PORT, USERNAME, MODE) = read_parameters_from_arg(sys.argv)
-my_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-my_socket.connect((HOST, PORT))
-my_socket.sendall(make_mess("NICK %s" % USERNAME))
-my_socket.sendall(make_mess("USER %s %i * :%s" % (USERNAME, MODE, USERNAME)))
-debug(my_socket)
+def receive_line(sock):
+    line = b''
+    character = b''
+    while line.find(b'\n') == -1:
+        try:
+            character = sock.recv(1)
+        except socket.error as msg:
+            print(msg, file=sys.stderr)
+        line += character
+    return line
+
+
+if __name__ == '__main__':
+    commands = ['!alert', 'Found']
+    users = queue.Queue()
+
+    (HOST, PORT, CHANNEL, USERNAME, MODE) = read_parameters_from_arg(sys.argv)
+    my_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    my_socket.connect((HOST, PORT))
+    my_socket.sendall(make_mess("NICK %s" % USERNAME))
+    my_socket.sendall(make_mess("USER %s %i * :%s" % (USERNAME, MODE, USERNAME)))
+    my_socket.sendall(make_mess("JOIN %s" % CHANNEL))
+
+    while True:
+        line = str(receive_line(my_socket).strip(), "utf-8")
+        print(line)
+        split_line = line.split(" ", 2)
+        length = len(split_line)
+        if length == 2:  # PING case
+            command, parameter = split_line
+            if command == "PING":
+                my_socket.sendall(make_mess("PONG %s" % parameter))
+        elif length == 3:
+            prefix, command, parameters = split_line
