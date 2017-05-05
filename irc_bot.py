@@ -1,5 +1,7 @@
+import json
 import socket
 import sys
+from urllib import request, error
 
 
 def get_parameter(arg_list, value):
@@ -34,7 +36,7 @@ def read_parameters_from_arg(arg_list):
 
 
 def make_mess(message):
-    print(message)
+    # print(message)
     return bytes(message + "\r\n", "utf-8")
 
 
@@ -50,18 +52,46 @@ def receive_line(sock):
     return line
 
 
-def get_username(prefix):
-    if prefix.find("!") != -1 or prefix.find("@") != -1:
-        start = prefix.index("!") + 2
-        end = prefix.index("@")
-        return prefix[start:end]
+def get_json_from_request(url):
+    try:
+        req = request.Request(url, method="GET")
+        res = request.urlopen(req)
+        return json.load(res)
+    except error.HTTPError:
+        return False
+
+
+def get_foreign_exchange(base):
+    base = base.upper()
+    url = 'http://api.fixer.io/latest'
+    result = get_json_from_request(url)
+    if result and base in result['rates']:
+        return result['rates'][base]
     else:
         return False
 
 
+def get_country_ip(ip_address):
+    url = 'https://api.ip2country.info/ip?' + ip_address
+    result = get_json_from_request(url)
+    if result:
+        return result['countryName']
+
+
+def response_for_ping(line):
+    command, parameter = line
+    if command == "PING":
+        my_socket.sendall(make_mess("PONG %s" % parameter))
+
+
+def recognize_command(commands, user_command):
+    if user_command == commands[0]:
+        return get_foreign_exchange
+    elif user_command == commands[1]:
+        return get_country_ip
+
+
 if __name__ == '__main__':
-    commands = ['!alert', 'Found']
-    users = set()
 
     (HOST, PORT, CHANNEL, USERNAME, MODE) = read_parameters_from_arg(sys.argv)
     my_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -70,23 +100,22 @@ if __name__ == '__main__':
     my_socket.sendall(make_mess("USER %s %i * :%s" % (USERNAME, MODE, USERNAME)))
     my_socket.sendall(make_mess("JOIN %s" % CHANNEL))
 
+    commands = ['!foreign_exchange', '!ip_country']
+    priv_msg = "PRIVMSG"
     while True:
         line = str(receive_line(my_socket).strip(), "utf-8")
         print(line)
         split_line = line.split(" ", 2)
         length = len(split_line)
-        if length == 2:  # PING case
-            command, parameter = split_line
-            if command == "PING":
-                my_socket.sendall(make_mess("PONG %s" % parameter))
+        if length == 2:
+            response_for_ping(split_line)
         elif length == 3:
             prefix, command, parameters = split_line
-            if command == "PRIVMSG":
-                parameters_list = parameters.split(" ")
-                if len(parameters_list) == 2 and parameters_list[1][1:] == "!alert":
-                    username = get_username(prefix)
-                    if username:
-                        if parameters_list[2] == "enabled":
-                            users.add(username)
-                        elif parameters_list[2] == "disabled":
-                            users.pop(username)
+            if command == priv_msg:
+                _, user_command, data = parameters.split(" ", 2)
+                user_command = user_command[1:]
+                if user_command in commands:
+                    func = recognize_command(commands, user_command)
+                    response = func(data)
+                    if response:
+                        my_socket.sendall(make_mess("%s %s :%s" % (priv_msg, CHANNEL, response)))
