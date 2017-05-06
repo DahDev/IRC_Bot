@@ -112,10 +112,11 @@ if __name__ == '__main__':
         elif length == 3:
             prefix, command, parameters = split_line
             if command == priv_msg:
-                _, user_command, data = parameters.split(" ", 2)
-                user_command = user_command[1:]
-                if user_command in commands:
-                    func = recognize_command(commands, user_command)
-                    response = func(data)
-                    if response:
-                        my_socket.sendall(make_mess("%s %s :%s" % (priv_msg, CHANNEL, response)))
+                _, text = parameters.split(" ", 1)
+                if len(text.split(" ")) >= 2:
+                    user_command, data = text[1:].split(" ", 1)
+                    if user_command in commands:
+                        func = recognize_command(commands, user_command)
+                        response = func(data)
+                        if response:
+                            my_socket.sendall(make_mess("%s %s :%s" % (priv_msg, CHANNEL, response)))
